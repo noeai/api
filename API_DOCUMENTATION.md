@@ -257,6 +257,9 @@ import os
 
 # WAŻNE: Przechowuj klucz API w zmiennych środowiskowych, nigdy w kodzie!
 API_KEY = os.environ.get("NOEAI_API_KEY")
+if not API_KEY:
+    raise ValueError("Zmienna środowiskowa NOEAI_API_KEY nie jest ustawiona")
+
 BASE_URL = "https://api.noe.ai/v1"
 
 headers = {
@@ -281,7 +284,7 @@ def chat_completion(message):
             json=payload,
             timeout=30
         )
-        response.raise_for_status()  # Sprawdza błędy HTTP
+        response.raise_for_status()  # Podnosi wyjątek dla błędów HTTP
         return response.json()
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 401:
@@ -310,6 +313,10 @@ const axios = require('axios');
 
 // WAŻNE: Przechowuj klucz API w zmiennych środowiskowych, nigdy w kodzie!
 const API_KEY = process.env.NOEAI_API_KEY;
+if (!API_KEY) {
+  throw new Error('Zmienna środowiskowa NOEAI_API_KEY nie jest ustawiona');
+}
+
 const BASE_URL = 'https://api.noe.ai/v1';
 
 const headers = {
@@ -333,7 +340,7 @@ async function chatCompletion(message) {
       payload,
       { 
         headers,
-        timeout: 30000  // 30 sekund timeout
+        timeout: 30000  // 30 seconds timeout
       }
     );
     
@@ -346,23 +353,23 @@ async function chatCompletion(message) {
       const data = error.response.data;
       
       if (status === 401) {
-        console.error('Błąd uwierzytelniania. Sprawdź klucz API.');
+        throw new Error('Błąd uwierzytelniania. Sprawdź klucz API.');
       } else if (status === 429) {
-        console.error('Przekroczono limit żądań. Sprawdź nagłówki X-RateLimit-*');
-        console.error('Resetuje się:', new Date(error.response.headers['x-ratelimit-reset'] * 1000));
+        const resetTime = error.response.headers['x-ratelimit-reset'];
+        const resetDate = resetTime ? new Date(resetTime * 1000).toISOString() : 'nieznany';
+        throw new Error(`Przekroczono limit żądań. Reset o: ${resetDate}`);
       } else if (status === 500) {
-        console.error('Błąd serwera. Spróbuj ponownie później.');
+        throw new Error('Błąd serwera. Spróbuj ponownie później.');
       } else {
-        console.error(`Błąd HTTP ${status}:`, data);
+        throw new Error(`Błąd HTTP ${status}: ${JSON.stringify(data)}`);
       }
     } else if (error.request) {
       // Żądanie zostało wysłane ale nie otrzymano odpowiedzi
-      console.error('Brak odpowiedzi od serwera. Sprawdź połączenie.');
+      throw new Error('Brak odpowiedzi od serwera. Sprawdź połączenie.');
     } else {
       // Coś poszło nie tak podczas konfiguracji żądania
-      console.error('Błąd:', error.message);
+      throw new Error(`Błąd konfiguracji: ${error.message}`);
     }
-    throw error;
   }
 }
 
@@ -372,7 +379,7 @@ chatCompletion('Napisz krótki wiersz o AI')
     console.log(result.choices[0].message.content);
   })
   .catch(error => {
-    console.error('Nie udało się wykonać zapytania');
+    console.error('Nie udało się wykonać zapytania:', error.message);
     process.exit(1);
   });
 ```
@@ -380,9 +387,12 @@ chatCompletion('Napisz krótki wiersz o AI')
 ### cURL
 
 ```bash
+# WAŻNE: Używaj zmiennych środowiskowych, nigdy nie wklejaj klucza bezpośrednio!
+# Ustaw zmienną: export NOEAI_API_KEY="sk-noeai-your-api-key"
+
 # Podstawowe zapytanie
 curl -X POST https://api.noe.ai/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Authorization: Bearer $NOEAI_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4",
@@ -393,7 +403,7 @@ curl -X POST https://api.noe.ai/v1/chat/completions \
 
 # Streaming response
 curl -X POST https://api.noe.ai/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Authorization: Bearer $NOEAI_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4",
