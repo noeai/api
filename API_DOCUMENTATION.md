@@ -231,13 +231,32 @@ curl -X POST https://api.noe.ai/v1/mcp/send \
 
 ## Przykłady użycia / Usage Examples
 
+### Dobre praktyki bezpieczeństwa / Security Best Practices
+
+⚠️ **WAŻNE:** Nigdy nie umieszczaj kluczy API bezpośrednio w kodzie!
+
+**Zalecane metody:**
+- Używaj zmiennych środowiskowych (`process.env`, `os.environ`)
+- Przechowuj sekrety w systemach zarządzania sekretami (AWS Secrets Manager, Azure Key Vault, etc.)
+- Używaj plików `.env` z bibliotekami jak `python-dotenv` lub `dotenv` dla Node.js
+- Dodaj `.env` do `.gitignore`, aby nie commitować sekretów do repozytorium
+
+**Przykład pliku `.env`:**
+```bash
+NOEAI_API_KEY=sk-noeai-your-actual-api-key-here
+```
+
+---
+
 ### Python
 
 ```python
 import requests
 import json
+import os
 
-API_KEY = "sk-noeai-your-api-key"
+# WAŻNE: Przechowuj klucz API w zmiennych środowiskowych, nigdy w kodzie!
+API_KEY = os.environ.get("NOEAI_API_KEY")
 BASE_URL = "https://api.noe.ai/v1"
 
 headers = {
@@ -245,7 +264,7 @@ headers = {
     "Content-Type": "application/json"
 }
 
-# Przykład: Chat completion
+# Przykład: Chat completion z obsługą błędów
 def chat_completion(message):
     payload = {
         "model": "gpt-4",
@@ -255,17 +274,33 @@ def chat_completion(message):
         "temperature": 0.7
     }
     
-    response = requests.post(
-        f"{BASE_URL}/chat/completions",
-        headers=headers,
-        json=payload
-    )
-    
-    return response.json()
+    try:
+        response = requests.post(
+            f"{BASE_URL}/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
+        response.raise_for_status()  # Sprawdza błędy HTTP
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 401:
+            print("Błąd uwierzytelniania. Sprawdź klucz API.")
+        elif e.response.status_code == 429:
+            print("Przekroczono limit żądań. Spróbuj ponownie później.")
+        else:
+            print(f"Błąd HTTP: {e.response.status_code}")
+        raise
+    except requests.exceptions.RequestException as e:
+        print(f"Błąd połączenia: {e}")
+        raise
 
 # Użycie
-result = chat_completion("Napisz krótki wiersz o AI")
-print(result["choices"][0]["message"]["content"])
+try:
+    result = chat_completion("Napisz krótki wiersz o AI")
+    print(result["choices"][0]["message"]["content"])
+except Exception as e:
+    print(f"Nie udało się wykonać zapytania: {e}")
 ```
 
 ### JavaScript/Node.js
@@ -273,7 +308,8 @@ print(result["choices"][0]["message"]["content"])
 ```javascript
 const axios = require('axios');
 
-const API_KEY = 'sk-noeai-your-api-key';
+// WAŻNE: Przechowuj klucz API w zmiennych środowiskowych, nigdy w kodzie!
+const API_KEY = process.env.NOEAI_API_KEY;
 const BASE_URL = 'https://api.noe.ai/v1';
 
 const headers = {
@@ -281,7 +317,7 @@ const headers = {
   'Content-Type': 'application/json'
 };
 
-// Przykład: Chat completion
+// Przykład: Chat completion z obsługą błędów
 async function chatCompletion(message) {
   const payload = {
     model: 'gpt-4',
@@ -295,12 +331,37 @@ async function chatCompletion(message) {
     const response = await axios.post(
       `${BASE_URL}/chat/completions`,
       payload,
-      { headers }
+      { 
+        headers,
+        timeout: 30000  // 30 sekund timeout
+      }
     );
     
     return response.data;
   } catch (error) {
-    console.error('Error:', error.response?.data || error.message);
+    // Obsługa różnych typów błędów
+    if (error.response) {
+      // Serwer odpowiedział z kodem błędu
+      const status = error.response.status;
+      const data = error.response.data;
+      
+      if (status === 401) {
+        console.error('Błąd uwierzytelniania. Sprawdź klucz API.');
+      } else if (status === 429) {
+        console.error('Przekroczono limit żądań. Sprawdź nagłówki X-RateLimit-*');
+        console.error('Resetuje się:', new Date(error.response.headers['x-ratelimit-reset'] * 1000));
+      } else if (status === 500) {
+        console.error('Błąd serwera. Spróbuj ponownie później.');
+      } else {
+        console.error(`Błąd HTTP ${status}:`, data);
+      }
+    } else if (error.request) {
+      // Żądanie zostało wysłane ale nie otrzymano odpowiedzi
+      console.error('Brak odpowiedzi od serwera. Sprawdź połączenie.');
+    } else {
+      // Coś poszło nie tak podczas konfiguracji żądania
+      console.error('Błąd:', error.message);
+    }
     throw error;
   }
 }
@@ -309,6 +370,10 @@ async function chatCompletion(message) {
 chatCompletion('Napisz krótki wiersz o AI')
   .then(result => {
     console.log(result.choices[0].message.content);
+  })
+  .catch(error => {
+    console.error('Nie udało się wykonać zapytania');
+    process.exit(1);
   });
 ```
 
@@ -359,7 +424,32 @@ curl -X POST https://api.noe.ai/v1/chat/completions \
   "error": {
     "message": "Invalid API key provided",
     "type": "invalid_request_error",
-    "code": "invalid_api_key"
+    "code": "invalid_api_key",
+    "status_code": 401
+  }
+}
+```
+
+**Inne przykłady błędów:**
+
+```json
+{
+  "error": {
+    "message": "Rate limit exceeded. Please retry after 60 seconds",
+    "type": "rate_limit_error",
+    "code": "rate_limit_exceeded",
+    "status_code": 429
+  }
+}
+```
+
+```json
+{
+  "error": {
+    "message": "Model 'gpt-5' not found",
+    "type": "invalid_request_error",
+    "code": "model_not_found",
+    "status_code": 404
   }
 }
 ```
